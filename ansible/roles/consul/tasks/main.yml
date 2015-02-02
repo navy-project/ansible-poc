@@ -1,0 +1,40 @@
+- name: Determine public IP address
+  command: "wget -q -O - http://169.254.169.254/latest/meta-data/public-ipv4"
+  register: ec2_public_ip
+
+- name: Determine private IP address
+  command: "wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4"
+  register: ec2_private_ip
+
+- name: Install consul
+  docker:
+    image: progrium/consul
+    name: consul
+    hostname: node
+    ports:
+      - 8500:8500
+      - 53:53/udp
+    command: "-server -bootstrap -advertise {{ ec2_private_ip.stdout }}"
+
+- name: Wait for consul
+  wait_for:
+    state: started
+    host: "{{docker_containers[0].NetworkSettings.IPAddress}}"
+    port: 8500
+
+- name: Install registrator
+  docker:
+    image: progrium/registrator
+    name: registrator
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock
+    hostname: "{{ ec2_private_ip.stdout }}"
+    command: "consul://{{ ec2_private_ip.stdout }}:8500"
+
+- name: Install drcon
+  docker:
+    name: proxy
+    ports:
+      - 80:80
+    image: tobscher/drcon
+    env: "CONSUL={{ ec2_private_ip.stdout }}:8500,SERVICE=blog"

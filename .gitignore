@@ -1,0 +1,6 @@
+*.pem
+
+Vagrantfile
+.vagrant/
+
+ansible/hosts

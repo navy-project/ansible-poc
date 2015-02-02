@@ -1,0 +1,61 @@
+- name: Run mysql
+  docker:
+    state: running
+    image: mysql
+    name: mysql
+    env: "MYSQL_ROOT_PASSWORD=admin"
+
+- name: Wait for mysql
+  wait_for:
+    state: started
+    host: "{{docker_containers[0].NetworkSettings.IPAddress}}"
+    port: 3306
+
+- name: Create database
+  docker:
+    image: tobscher/blog
+    name: db_create
+    detach: false
+    state: running
+    volumes:
+      - /tmp/ansible:tmp/ansible
+    links:
+      - mysql:mysql
+    command: sh -c -e "bundle exec rake db:create; touch /tmp/ansible/db-create"
+
+- name: Wait for db:create to finish
+  wait_for:
+    path: /tmp/ansible/db-create
+
+- name: Clean up db:create
+  shell: rm /tmp/ansible/db-create
+
+- name: Migrate database
+  docker:
+    image: tobscher/blog
+    name: db_migrate
+    detach: false
+    state: running
+    volumes:
+      - /tmp/ansible:tmp/ansible
+    links:
+      - mysql:mysql
+    command: sh -c -e "bundle exec rake db:migrate; touch /tmp/ansible/db-migrate"
+
+- name: Wait for db:migrate to finish
+  wait_for:
+    path: /tmp/ansible/db-migrate
+
+- name: Clean up db:migrate
+  shell: rm /tmp/ansible/db-migrate
+
+- name: Run blog
+  docker:
+    image: tobscher/blog
+    state: running
+    env: "SERVICE_NAME=blog"
+    links:
+      - mysql:mysql
+    command: bundle exec rails s -b 0.0.0.0
+    ports:
+      - 3000
